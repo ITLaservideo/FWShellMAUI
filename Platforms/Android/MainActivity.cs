@@ -3,6 +3,8 @@ using Android.Content;
 using Android.Content.PM;
 using Android.OS;
 using Android.Widget;
+using AndroidX.Core.View;
+using View = Android.Views.View;
 using Firebase.Messaging;
 using Java.Interop;
 using Plugin.Firebase.CloudMessaging;
@@ -16,6 +18,23 @@ namespace FWShellMAUI {
             HandleIntent(Intent);
             CreateNotificationChannelIfNeeded();
             AskNotificationPermission();
+            ApplySystemBarInsets();
+        }
+
+        // MAUI's default Android theme draws edge-to-edge (content extends under the
+        // status bar / notch and the bottom navigation/gesture bar). Pad the root content
+        // view by the system bar insets so app content stays clear of those reserved areas.
+        private void ApplySystemBarInsets() {
+            var rootView = FindViewById(Android.Resource.Id.Content);
+            ViewCompat.SetOnApplyWindowInsetsListener(rootView, new SystemBarsInsetsListener());
+        }
+
+        private sealed class SystemBarsInsetsListener : Java.Lang.Object, IOnApplyWindowInsetsListener {
+            public WindowInsetsCompat OnApplyWindowInsets(View v, WindowInsetsCompat insets) {
+                var systemBars = insets.GetInsets(WindowInsetsCompat.Type.SystemBars());
+                v.SetPadding(systemBars.Left, systemBars.Top, systemBars.Right, systemBars.Bottom);
+                return insets;
+            }
         }
         protected override void OnNewIntent(Intent intent) {
             base.OnNewIntent(intent);

@@ -4,6 +4,13 @@ using System.Diagnostics;
 namespace FWShellMAUI {
     public partial class MainPage : ContentPage {
         private const int id_webview = 0;
+        private static readonly TimeSpan LoadingMessageInterval = TimeSpan.FromSeconds(5.5);
+        private static readonly TimeSpan SpinnerTickInterval = TimeSpan.FromMilliseconds(30);
+        private static readonly double SpinnerRotationDurationMs = 1751;
+
+        private IDispatcherTimer? _loadingMessageTimer;
+        private IDispatcherTimer? _spinnerTimer;
+        private double _spinnerAngle;
 
         public MainPage() {
             InitializeComponent();
@@ -12,48 +19,108 @@ namespace FWShellMAUI {
 
         private async void OnLoaded(object? sender, EventArgs e) {
             RequestDispatcher.Register(WebView, id_webview);
+            WebView.Navigated += OnFirstNavigated;
+            StartLoadingMessages();
+            StartSpinner();
+            await EnsureHandlerAsync(WebView);
 
-            if (!AppConfig._scripts.TryGetValue(App.RequestedStartApp, out var entry)) {
-                await DisplayAlertAsync("Warning", $"No configuration found for app: {App.RequestedStartApp}", "OK");
-                return;
+            try {
+                await AppLoader.LoadAsync(id_webview, App.RequestedStartApp);
+            } catch (InvalidOperationException ex) {
+                WebView.Navigated -= OnFirstNavigated;
+                StopLoadingMessages();
+                StopSpinner();
+                LoadingOverlay.IsVisible = false;
+                await DisplayAlertAsync("Warning", ex.Message, "OK");
             }
-
-            if (entry.main.script is JSProvider.JS.pages page) {
-                var basePath = await JSProvider.getPathJSHTMLApp(page, id_webview);
-                WebView.Source = new UrlWebViewSource { Url = new Uri(basePath).AbsoluteUri };
-                return;
-            }
-
-            if (entry.main.script is JSProvider.JS.injectable_apps injectableApp) {
-                WebView.Navigated += async (_, args) => {
-                    if (args.Url.StartsWith("wawapp://", StringComparison.OrdinalIgnoreCase))
-                        return;
-                    string script = await JSProvider.getScriptApp(injectableApp, id_webview);
-                    await InjectScriptAsync(WebView, script);
-                };
-            }
-
-            if (entry.main.url is not null) {
-                string url = entry.main.url;
-                if (!url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
-                    !url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
-                    url = "http://" + url;
-                WebView.Source = new UrlWebViewSource { Url = url };
-            } else
-                await DisplayAlertAsync("Warning", $"No URL configured for app: {App.RequestedStartApp}", "OK");
         }
 
-        private static async Task InjectScriptAsync(WebView webView, string script) {
-            string b64 = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(script));
-            const int chunkSize = 4_500_000;//4.5 MB
+        private void OnFirstNavigated(object? sender, WebNavigatedEventArgs e) {
+            // WebView2's EnsureCoreWebView2Async() triggers its own internal navigation to
+            // "about:blank" before the real content loads; ignore it so the overlay doesn't
+            // dismiss itself before AppLoader ever navigates to the actual target.
+            if (string.IsNullOrEmpty(e.Url) || e.Url.Equals("about:blank", StringComparison.OrdinalIgnoreCase))
+                return;
 
-            await webView.EvaluateJavaScriptAsync("window.__fw_chunks=[];");
-            for (int i = 0; i < b64.Length; i += chunkSize) {
-                string chunk = b64.Substring(i, Math.Min(chunkSize, b64.Length - i));
-                await webView.EvaluateJavaScriptAsync($"window.__fw_chunks.push('{chunk}');");
+            WebView.Navigated -= OnFirstNavigated;
+            StopLoadingMessages();
+            StopSpinner();
+
+            if (e.Result == WebNavigationResult.Success) {
+                LoadingOverlay.IsVisible = false;
+                return;
             }
-            await webView.EvaluateJavaScriptAsync(
-                "try{eval(new TextDecoder().decode(Uint8Array.from(atob(window.__fw_chunks.join('')),c=>c.charCodeAt(0))))}finally{delete window.__fw_chunks}");
+            LoadingIndicator.IsVisible = false;
+            LoadingMessageLabel.IsVisible = false;
+            LoadingErrorLabel.Text = e.Result == WebNavigationResult.Timeout
+                ? "Connection timed out."
+                : $"Unable to load app ({e.Result}).";
+            LoadingErrorLabel.IsVisible = true;
+
+            try {
+                AppLoader.LoadAsync(id_webview, StartApp.ServerStatus);
+            } catch { } finally {
+                LoadingOverlay.HorizontalOptions = LayoutOptions.Center;
+                LoadingOverlay.VerticalOptions = LayoutOptions.Start;
+            }
+        }
+
+        private void StartLoadingMessages() {
+            _ = SetRandomLoadingMessageAsync();
+
+            _loadingMessageTimer = Dispatcher.CreateTimer();
+            _loadingMessageTimer.Interval = LoadingMessageInterval;
+            _loadingMessageTimer.Tick += async (_, _) => await SetRandomLoadingMessageAsync();
+            _loadingMessageTimer.Start();
+        }
+
+        private void StopLoadingMessages() {
+            _loadingMessageTimer?.Stop();
+            _loadingMessageTimer = null;
+        }
+
+        private async Task SetRandomLoadingMessageAsync() {
+            LoadingMessageLabel.Text = await LoadingMessagesProvider.GetRandomMessageAsync();
+        }
+
+        private void StartSpinner() {
+            _spinnerAngle = 0;
+            LoadingIndicator.Rotation = 0;
+
+            double degreesPerTick = 360.0 * SpinnerTickInterval.TotalMilliseconds / SpinnerRotationDurationMs;
+            _spinnerTimer = Dispatcher.CreateTimer();
+            _spinnerTimer.Interval = SpinnerTickInterval;
+            _spinnerTimer.Tick += (_, _) => {
+                _spinnerAngle = (_spinnerAngle + degreesPerTick) % 360;
+                LoadingIndicator.Rotation = _spinnerAngle;
+            };
+            _spinnerTimer.Start();
+        }
+
+        private void StopSpinner() {
+            _spinnerTimer?.Stop();
+            _spinnerTimer = null;
+        }
+
+        private static async Task EnsureHandlerAsync(WebView webView) {
+            if (webView.Handler?.PlatformView is null) {
+                var tcs = new TaskCompletionSource();
+                void onHandlerChanged(object? _, EventArgs __) {
+                    if (webView.Handler?.PlatformView is null)
+                        return;
+                    webView.HandlerChanged -= onHandlerChanged;
+                    tcs.TrySetResult();
+                }
+                webView.HandlerChanged += onHandlerChanged;
+                await tcs.Task;
+            }
+
+#if WINDOWS
+            // PlatformView existing doesn't mean CoreWebView2 is ready yet on Windows;
+            // setting Source before it initializes can silently drop the navigation.
+            if (webView.Handler?.PlatformView is Microsoft.UI.Xaml.Controls.WebView2 winWebView)
+                await winWebView.EnsureCoreWebView2Async();
+#endif
         }
     }
 }

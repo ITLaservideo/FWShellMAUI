@@ -68,7 +68,7 @@
 		<MauiAsset Include="FWITD\ClientApp\**" LogicalName="FWITD\ClientApp\%(RecursiveDir)%(Filename)%(Extension)" />
 
 		<!-- Default settings file — seeded to AppDataDirectory on first launch -->
-		<MauiAsset Include="appsettings.json" LogicalName="appsettings.json" />
+		<MauiAsset Include="appsettings.json" LogicalName="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
 	</ItemGroup>
 
 	<ItemGroup>
@@ -81,9 +81,12 @@
 	</ItemGroup>
 
 	<ItemGroup>
+	  <Compile Remove="FWITD\CloudflareCidrs.cs" />
 	  <Compile Remove="FWITD\Controllers\WindowsController.cs" />
 	  <Compile Remove="FWITD\MouseClicker.cs" />
+	  <Compile Remove="FWITD\Services\SystemSettingsAegisGate.cs" />
 	  <Compile Remove="FWITD\TypeWriter.cs" />
+	  <Compile Remove="FWITD\UtilsWeb.cs" />
 	</ItemGroup>
 
 	<ItemGroup>

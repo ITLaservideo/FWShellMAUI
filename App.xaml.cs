@@ -10,7 +10,7 @@ namespace FWShellMAUI {
         public App() {
             InitializeComponent();
             ParseCommandLineArgs();
-#if WINDOWS
+#if false
             SQL.Init();
 #endif
         }

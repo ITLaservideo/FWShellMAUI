@@ -1,6 +1,37 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:controls="clr-namespace:FWShellMAUI.Controls"
              x:Class="FWShellMAUI.MainPage">
-    <WebView x:Name="WebView" />
+    <Grid>
+        <WebView x:Name="WebView" />
+        <Grid x:Name="LoadingOverlay"
+              BackgroundColor="Black"
+              Opacity="0.8">
+            <VerticalStackLayout HorizontalOptions="Center"
+                                 VerticalOptions="Center"
+                                 Spacing="12">
+                <GraphicsView x:Name="LoadingIndicator"
+                              WidthRequest="40"
+                              HeightRequest="40"
+                              HorizontalOptions="Center">
+                    <GraphicsView.Drawable>
+                        <controls:SpinnerDrawable />
+                    </GraphicsView.Drawable>
+                </GraphicsView>
+                <Label x:Name="LoadingMessageLabel"
+                       TextColor="White"
+                       HorizontalOptions="Center"
+                       HorizontalTextAlignment="Center"
+                       Margin="24,0" />
+            </VerticalStackLayout>
+            <Label x:Name="LoadingErrorLabel"
+                   IsVisible="False"
+                   TextColor="White"
+                   HorizontalOptions="Center"
+                   VerticalOptions="Center"
+                   HorizontalTextAlignment="Center"
+                   Margin="24,0" />
+        </Grid>
+    </Grid>
 </ContentPage>
