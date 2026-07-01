@@ -20,7 +20,7 @@ namespace FWShellMAUI {
 
             if (entry.main.script is JSProvider.JS.pages page) {
                 var basePath = await JSProvider.getPathJSHTMLApp(page, id_webview);
-                WebView.Source = new UrlWebViewSource { Url = new Uri(basePath + ".html").AbsoluteUri };
+                WebView.Source = new UrlWebViewSource { Url = new Uri(basePath).AbsoluteUri };
                 return;
             }
 
